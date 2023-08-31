@@ -8,3 +8,4 @@ db = client["sms"]
 
 # collection or table
 users = db["users"]
+secretes = db["secretes"]

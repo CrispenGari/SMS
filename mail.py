@@ -24,28 +24,13 @@ def sendPlainEmail(to: str, body: str, subject: str):
         server.sendmail(SmtpConfig.FROM, to, message)
 
 
-def sendFancyEmail(to: str, body: str, subject: str):
+def sendFancyEmail(to: str, html: str, subject: str):
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
     message["From"] = SmtpConfig.FROM
     message["To"] = to
-
-    html = f"""
-    <html>
-    <body>
-        <p>Hi,<br>
-        {body}<br>
-
-    </body>
-    </html>
-    """
-    part2 = MIMEText(html, "html")
-    message.attach(part2)
+    message.attach(MIMEText(html, "html"))
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", SmtpConfig.PORT, context=context) as server:
         server.login(SmtpConfig.FROM, SmtpConfig.PASSWORD)
         server.sendmail(SmtpConfig.FROM, to, message.as_string())
-
-
-# sendPlainEmail("crispengari@gmail.com", "Hi", "Testing")
-sendFancyEmail("crispengari@gmail.com", "Hi", "Testing")

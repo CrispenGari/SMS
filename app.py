@@ -1,9 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for
 from argon2 import PasswordHasher, exceptions
-from client import users
+from client import users, secretes
 from datetime import timedelta
 from bson.objectid import ObjectId
 from random import random
+from mail import sendFancyEmail
+from uuid import uuid4
+
 
 """
 -> http://localhost:1234
@@ -274,14 +277,61 @@ def edit_profile():
         return response, 302
 
 
-# @app.route("/auth/change-password/<token:string>", methods=["POST", "GET"])
-# def change_password(token):
-#     return token
+@app.route("/auth/change-password/<string:token>", methods=["POST", "GET"])
+def change_password(token):
+    ctx = {"error": "", "message": ""}
+    res = render_template("auth/change-password.html", ctx=ctx)
+    if request.method == "GET":
+        cookies = request.cookies
+        if COOKIE_NAME not in cookies:
+            return res, 200
+        _id = request.cookies[COOKIE_NAME]
+        me = users.find_one({"_id": (ObjectId(_id))})
+        if me is None:
+            return res, 200
+        else:
+            ctx["error"] = ""
+            response = redirect(url_for("home"))
+            response.set_cookie(
+                COOKIE_NAME,
+                str(me["_id"]),
+                timedelta(days=7),
+                path="/",
+                secure=False,
+                httponly=True,
+                samesite="lax",
+            )
+            return response, 302
+    else:
+        data = request.form
+        password = data["password"]
+        confirm = data["confirmPassword"]
+        doc = secretes.find_one({"token": token})
+        if doc is None:
+            ctx["error"] = "Invalid reset password token."
+            return render_template("auth/register.html", ctx=ctx)
+
+        if len(password) < 5:
+            ctx["error"] = "The password must have at least 5 characters"
+            return render_template("auth/register.html", ctx=ctx)
+
+        if password != confirm:
+            ctx["error"] = "The two password must match."
+            return render_template("auth/register.html", ctx=ctx)
+
+        hashedPassword = hasher.hash(password)
+        users.update_one(
+            {"_id": ObjectId(doc["id"])},
+            {"$set": {"password": hashedPassword}},
+        )
+        secretes.delete_one({"_id": doc["_id"]})
+        ctx["message"] = f"Your password has been reset successively."
+        return render_template("auth/change-password.html", ctx=ctx)
 
 
 @app.route("/auth/forgot-password", methods=["POST", "GET"])
 def forgot_password():
-    ctx = {"error": ""}
+    ctx = {"error": "", "message": ""}
     res = render_template("auth/forgot-password.html", ctx=ctx)
     if request.method == "GET":
         cookies = request.cookies
@@ -313,7 +363,29 @@ def forgot_password():
             return render_template("auth/forgot-password.html", ctx=ctx)
         else:
             # notify the user that the email has been sent
-            print(email)
+            token = str(uuid4())
+            url = f"http://localhost:1234/auth/change-password/{token}"
+            secretes.insert_one({"token": token, "id": me["_id"]})
+            html = f"""
+            <html>
+            <body>
+                <h6>Hi {me['firstName']} {me['lastName']}, </h6>
+                <p>We have received a reset password request on your SMS account, please click the following
+                link if you want to reset your password. If you do not intent to reset the password
+                you can ignore this email.</p>
+                <br/>
+                {url}
+                <br/><br/>
+                <p>Regards</p>
+                <br/>
+                <b>SMS Team</b>
+            </body>
+            </html>
+            """
+
+            sendFancyEmail(email, html, "Reset SMS Account Password")
+            ctx["message"] = f"The reset password link has been sent to {email}."
+
             return render_template("auth/forgot-password.html", ctx=ctx)
 
 
